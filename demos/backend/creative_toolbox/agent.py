@@ -34,7 +34,7 @@ from .tools import (
 
 logging.basicConfig(level=logging.INFO)
 
-MODEL_ID_FLASH_MODEL = "gemini-2.5-flash"
+MODEL_ID_FLASH_MODEL = "gemini-3.7-flash"
 MODEL_ID_PRO_MODEL = "gemini-2.5-pro"
 
 media_generation_agent = LlmAgent(

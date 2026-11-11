@@ -134,6 +134,8 @@ async def generate_image_with_gemini(
         reference_image_3_filename,
         reference_image_4_filename,
     ]
+    # Drop unused (empty) reference slots; otherwise the service tries to load an asset named "".
+    reference_image_filenames = [name for name in reference_image_filenames if name]
 
     logger.info(
         json.dumps(
