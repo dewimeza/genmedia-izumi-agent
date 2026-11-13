@@ -28,6 +28,7 @@ from .tools import (
     gemini_llm_tools,
     image_gen_tools,
     music_gen_tools,
+    product_review_tools,
     speech_gen_tools,
     video_gen_tools,
 )
@@ -96,6 +97,8 @@ root_agent = LlmAgent(
         FunctionTool(func=asset_tools.load_asset_and_save_as_artifact),
         FunctionTool(func=gemini_llm_tools.creative_writer_with_gemini),
         FunctionTool(func=asset_tools.list_assets),
+        FunctionTool(func=product_review_tools.review_product_fidelity),
+        FunctionTool(func=product_review_tools.record_review_decision),
     ],
 )
 
