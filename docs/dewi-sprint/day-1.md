@@ -52,7 +52,18 @@ Side effect: Imagen returns 404 at `global`, so use Gemini Image for generation 
 5. 404 for Imagen at `global`: see the side effect above.
 6. Gemini Image failed on empty reference names: see the changes table.
 
+## Five-sentence summary
+
+1. **What I changed:** I got Izumi running on my computer, fixed a retired model name and an empty-image bug, and added a product fidelity reviewer to the `creative_toolbox` agent. It compares a real scarf photo with an AI image on colour, pattern, shape and visible branding, and my Keep, Reject or Need more information choice is saved separately from its review.
+2. **What I learned:** The AI model can't judge a small shift in neon pink just by looking, so adding measured colour differences as a hint, and never letting the reviewer be highly confident about colour, made it catch changes it had missed.
+3. **What I tested:** I tested eight candidate images against one flash reference photo of a neon-pink scarf: two AI-generated (a close match and one with the corn removed) and six edited copies of the real photo (duller pink, slightly redder pink, blurry, partly hidden, warm light and a different background).
+4. **What failed:** At first it called a visibly redder pink a match with high confidence, used wording that was too sure ("match precisely"), and didn't ask for a clearer photo when the scarf was partly hidden.
+5. **What I will do next:** Next I'll test more AI-generated images from Izumi, including a strong colour change and an added or removed bird, check whether the reviewer gives the same answer when I repeat a test, and find out who made the design before sharing any images publicly.
+
+Details of every test are in `test-results.md`. The plan asks for two cases to stay unseen until Day 5; all eight test images were used while tuning the reviewer, so two new cases are needed.
+
 ## Still open
 
-- Other agents (`ads_x`, `ads_codirector`, `elements_to_video`) still hard-code `gemini-2.5-flash` and are likely to fail the same way. They are not needed for the minimum plan.
-- Evidence still to add by Dewi: one-page problem brief, initial flow map, two screenshots, the downloaded image, and the five-sentence summary (what I changed; what I learned; what I tested; what failed; what I will do next).
+- Other places still hard-code `gemini-2.5-flash` and are likely to fail the same way: the `ads_codirector` and `elements_to_video` agents, and the creative writer tool in `demos/backend/creative_toolbox/tools/gemini_llm_tools.py`. `ads_x` already uses `gemini-3.7-flash`. None are needed for the minimum plan.
+- Who made the scarf design is unknown, so the reference photo, the scarf images and the screenshots that show them stay out of this public repository.
+- Evidence is listed in `evidence-index.md`.
