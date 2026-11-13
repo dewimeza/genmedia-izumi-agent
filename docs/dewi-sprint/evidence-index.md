@@ -25,7 +25,7 @@ One list of what exists, where it lives, and which items are private. Private it
 | `49c9cf6` | Product fidelity review tool |
 | `c286a7a` | Reviewer test results |
 
-Later commits are on the branch; use `git log` for the full list. Nothing has been pushed to the fork yet.
+Later commits are on the branch; use `git log` for the full list. The branch was first pushed to the fork on 2026-11-12: https://github.com/dewimeza/genmedia-izumi-agent/tree/dewi-sprint. The fork is public, so everything on the branch is public; that is why the photos, scarf images and screenshots are kept out of it.
 
 ## Private (not in this repository)
 
