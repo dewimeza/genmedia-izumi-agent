@@ -356,6 +356,44 @@ def test_a_given_next_step_is_kept():
     assert prt.parse_review(raw)["next_step"] == "Retake it in daylight."
 
 
+@pytest.mark.parametrize(
+    "advice",
+    [
+        "Regenerate the image to better match the original pink print colour.",
+        "Adjust the colour to match the reference.",
+        "Make it less red.",
+        "Reject this image.",
+        "Keep this one.",
+        "Shift the hue closer to the reference.",
+    ],
+)
+def test_next_step_with_fix_or_decision_is_replaced(advice):
+    raw = _model_json({"colour": "mismatch"}, next_step=advice)
+    review = prt.parse_review(raw)
+    assert review["next_step"] == prt._NEUTRAL_NEXT_STEP
+
+
+def test_fix_advice_on_cannot_assess_becomes_clearer_photo_request():
+    raw = _model_json({"shape": "unclear"}, next_step="Fix the colour first.")
+    review = prt.parse_review(raw)
+    assert review["assessment"] == "cannot_assess"
+    assert "clearer" in review["next_step"]
+
+
+@pytest.mark.parametrize(
+    "check",
+    [
+        "Compare the print colours side by side under consistent lighting.",
+        "Generate a new image and run the review again.",
+        "Retake the photo in even daylight.",
+        "Take a closer look at the lower right corner.",
+    ],
+)
+def test_checking_next_steps_are_kept(check):
+    raw = _model_json({"colour": "mismatch"}, next_step=check)
+    assert prt.parse_review(raw)["next_step"] == check
+
+
 def test_measure_finds_print_and_ground():
     m = prt.measure_print_colour(_png(GROUND, PINK))
     assert m["print_found"] is True
@@ -424,3 +462,4 @@ def test_prompt_keeps_next_step_to_checking_not_fixing():
 
     assert "Never tell the user how to edit" in product_reviewer.INSTRUCTION
     assert "never tell them to keep" in product_reviewer.INSTRUCTION
+    assert "Do not say what the new image should change" in product_reviewer.INSTRUCTION

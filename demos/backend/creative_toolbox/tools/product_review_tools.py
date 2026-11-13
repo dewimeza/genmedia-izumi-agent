@@ -55,6 +55,25 @@ DECISIONS = {
     "need more information": "Need more information",
 }
 
+# A next step may only ask for a check or a better image. These words mean it
+# says how to fix the image or what to decide, so it is replaced in code.
+# A word list is blunt: it can also catch harmless wording, and the neutral
+# replacement is safe in that case.
+_NEXT_STEP_NOT_ALLOWED = re.compile(
+    r"\b(keep|keeping|reject|rejecting|discard|accept|approve)\b"
+    r"|\b(adjust|correct|fix|edit|tweak|tune|increase|decrease|reduce|boost"
+    r"|darken|lighten|brighten|saturate|desaturate|recolou?r)\w*"
+    r"|\b(better|more closely|closer) match"
+    r"|\bmatch(es|ing)? the (original|reference)"
+    r"|\bcloser to\b"
+    r"|\bmake (it|the|them)\b",
+    re.IGNORECASE,
+)
+_NEUTRAL_NEXT_STEP = (
+    "Compare the two images side by side, or generate a new image and run "
+    "the review again."
+)
+
 _RESULT_KEY = "review_result:{}"
 _DECISION_KEY = "review_decision:{}"
 
@@ -130,6 +149,10 @@ def parse_review(raw_text: str) -> dict:
         assessment = "cannot_assess"
 
     next_step = str(data.get("next_step", "")).strip()
+    if next_step and _NEXT_STEP_NOT_ALLOWED.search(next_step):
+        # The model told the user what to fix, or whether to keep or reject.
+        # That decision is the user's, so replace it with a neutral check.
+        next_step = "" if assessment == "cannot_assess" else _NEUTRAL_NEXT_STEP
     if assessment == "cannot_assess" and not next_step:
         next_step = (
             "Please upload a clearer photo where the whole scarf is visible and "
