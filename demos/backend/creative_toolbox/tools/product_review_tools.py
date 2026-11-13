@@ -78,12 +78,16 @@ _RESULT_KEY = "review_result:{}"
 _DECISION_KEY = "review_decision:{}"
 
 
-def parse_review(raw_text: str) -> dict:
+def parse_review(raw_text: str, detail_regions: tuple[str, ...] = ()) -> dict:
     """Validates the model's JSON and enforces the reviewer's rules.
 
     Raises ValueError if the text is not usable. On success the returned review
     always has one finding for each of the four criteria, in a fixed order, and
     an assessment that agrees with those findings.
+
+    detail_regions names the close-ups that were sent to the model. Pattern
+    confidence may only be "high" when every close-up was checked and matched,
+    and a close-up that differs makes the pattern a mismatch.
     """
     text = (raw_text or "").strip()
     # Models sometimes wrap JSON in a code fence even when told not to.
@@ -136,6 +140,23 @@ def parse_review(raw_text: str) -> dict:
             )
         )
 
+    detail_checks = _parse_detail_checks(data.get("detail_checks"), detail_regions)
+    pattern = next(f for f in findings if f["criterion"] == "pattern")
+    differing = [d for d in detail_checks if d["status"] == "mismatch"]
+    if differing and pattern["status"] != "mismatch":
+        # The reviewer saw a difference close up; the pattern cannot match.
+        pattern["status"] = "mismatch"
+        pattern["confidence"] = "medium"
+        pattern["evidence"] = " ".join(
+            [pattern["evidence"]]
+            + [f"Close-up of the {d['region']}: {d['evidence']}" for d in differing]
+        ).strip()
+    elif pattern["confidence"] == "high" and not (
+        detail_checks and all(d["status"] == "match" for d in detail_checks)
+    ):
+        # Without matching close-ups, small redrawn details can be missed.
+        pattern["confidence"] = "medium"
+
     statuses = {f["criterion"]: f["status"] for f in findings}
     if any(s == "mismatch" for s in statuses.values()):
         assessment = "issues_found"
@@ -163,7 +184,111 @@ def parse_review(raw_text: str) -> dict:
         "findings": findings,
         "summary": str(data.get("summary", "")).strip(),
         "next_step": next_step,
+        "detail_checks": detail_checks,
     }
+
+
+def _parse_detail_checks(raw, detail_regions: tuple[str, ...]) -> list[dict]:
+    """One check per close-up that was sent; a missing one counts as unclear."""
+    given = {}
+    for item in raw if isinstance(raw, list) else []:
+        if not isinstance(item, dict):
+            continue
+        region = str(item.get("region", "")).strip().lower()
+        status = str(item.get("status", "")).strip().lower()
+        if region in detail_regions and region not in given:
+            given[region] = {
+                "region": region,
+                "status": status if status in STATUSES else "unclear",
+                "evidence": str(item.get("evidence", "")).strip(),
+            }
+    return [
+        given.get(
+            region,
+            {
+                "region": region,
+                "status": "unclear",
+                "evidence": "The reviewer did not report on this close-up.",
+            },
+        )
+        for region in detail_regions
+    ]
+
+
+def _print_mask(rgb):
+    """Returns (print mask, hue in degrees, saturation, brightness) for an RGB array in 0-1."""
+    r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
+    mx = rgb.max(axis=2)
+    delta = mx - rgb.min(axis=2)
+    sat = np.where(mx > 0, delta / np.maximum(mx, 1e-6), 0.0)
+    hue = np.zeros_like(mx)
+    has_hue = delta > 1e-6
+    is_r = has_hue & (mx == r)
+    is_g = has_hue & ~is_r & (mx == g)
+    is_b = has_hue & ~is_r & ~is_g
+    hue[is_r] = ((g - b)[is_r] / delta[is_r]) % 6
+    hue[is_g] = (b - r)[is_g] / delta[is_g] + 2
+    hue[is_b] = (r - g)[is_b] / delta[is_b] + 4
+    hue *= 60.0  # degrees, 0-360
+    # Pink to red (about 290 to 15 degrees). Brown backgrounds start near 20.
+    mask = (sat > 0.27) & (mx > 0.35) & ((hue >= 290) | (hue <= 15))
+    return mask, hue, sat, mx
+
+
+# Close-up areas, as (name, x, y, size) relative to the printed area, so the
+# same part of the design is cut from both images even when the photos are
+# framed differently.
+DETAIL_REGIONS = (
+    ("centre", 0.50, 0.50, 0.30),
+    ("top-left corner", 0.13, 0.13, 0.26),
+    ("left, halfway to the edge", 0.27, 0.50, 0.26),
+)
+
+
+def make_detail_crops(data: bytes) -> list[tuple[str, bytes]]:
+    """Cuts the DETAIL_REGIONS close-ups out of an image, as PNG bytes.
+
+    The regions are placed inside the box around the pink/red print. Returns
+    an empty list if the image cannot be read or no print is found.
+    """
+    if np is None or Image is None:
+        return []
+    try:
+        with Image.open(io.BytesIO(data)) as im:
+            full = ImageOps.exif_transpose(im).convert("RGB")
+    except Exception:
+        return []
+    small = full.copy()
+    small.thumbnail((400, 400))
+    mask, *_ = _print_mask(np.asarray(small, dtype=np.float32) / 255.0)
+    if mask.mean() < 0.01:
+        return []
+    ys, xs = np.nonzero(mask)
+    scale_x = full.width / small.width
+    scale_y = full.height / small.height
+    # Percentiles ignore a few stray pink pixels outside the print.
+    left, right = (float(v) * scale_x for v in np.percentile(xs, [1, 99]))
+    top, bottom = (float(v) * scale_y for v in np.percentile(ys, [1, 99]))
+    width, height = right - left, bottom - top
+    if width < 20 or height < 20:
+        return []
+
+    crops = []
+    for name, cx, cy, size in DETAIL_REGIONS:
+        x, y = left + cx * width, top + cy * height
+        half_w, half_h = size * width / 2, size * height / 2
+        box = (
+            int(max(0, x - half_w)),
+            int(max(0, y - half_h)),
+            int(min(full.width, x + half_w)),
+            int(min(full.height, y + half_h)),
+        )
+        crop = full.crop(box)
+        crop.thumbnail((512, 512))
+        out = io.BytesIO()
+        crop.save(out, format="PNG")
+        crops.append((name, out.getvalue()))
+    return crops
 
 
 def measure_print_colour(data: bytes) -> dict | None:
@@ -185,21 +310,7 @@ def measure_print_colour(data: bytes) -> dict | None:
         return None
 
     r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
-    mx = rgb.max(axis=2)
-    delta = mx - rgb.min(axis=2)
-    sat = np.where(mx > 0, delta / np.maximum(mx, 1e-6), 0.0)
-    hue = np.zeros_like(mx)
-    has_hue = delta > 1e-6
-    is_r = has_hue & (mx == r)
-    is_g = has_hue & ~is_r & (mx == g)
-    is_b = has_hue & ~is_r & ~is_g
-    hue[is_r] = ((g - b)[is_r] / delta[is_r]) % 6
-    hue[is_g] = (b - r)[is_g] / delta[is_g] + 2
-    hue[is_b] = (r - g)[is_b] / delta[is_b] + 4
-    hue *= 60.0  # degrees, 0-360
-
-    # Pink to red (about 290 to 15 degrees). Brown backgrounds start near 20.
-    print_mask = (sat > 0.27) & (mx > 0.35) & ((hue >= 290) | (hue <= 15))
+    print_mask, hue, sat, mx = _print_mask(rgb)
     # Light cloth, including cloth with a warm or cool cast; excludes the print.
     ground_mask = (sat < 0.40) & (mx > 0.60) & ~print_mask
 
@@ -359,6 +470,20 @@ async def review_product_fidelity(
         )
         if colour_hint:
             contents.append(colour_hint)
+        reference_crops = make_detail_crops(reference_bytes)
+        candidate_crops = make_detail_crops(candidate_bytes)
+        detail_regions: tuple[str, ...] = ()
+        if reference_crops and candidate_crops:
+            detail_regions = tuple(name for name, _ in reference_crops)
+            contents.append(
+                "CLOSE-UPS: the same areas of the print, cut from both images. "
+                "Compare each pair for the detailed checks."
+            )
+            for (name, ref_png), (_, cand_png) in zip(reference_crops, candidate_crops):
+                contents.append(f"Close-up '{name}', REFERENCE:")
+                contents.append(types.Part.from_bytes(data=ref_png, mime_type="image/png"))
+                contents.append(f"Close-up '{name}', CANDIDATE:")
+                contents.append(types.Part.from_bytes(data=cand_png, mime_type="image/png"))
 
         response = await client.aio.models.generate_content(
             model=model,
@@ -369,7 +494,7 @@ async def review_product_fidelity(
                 response_mime_type="application/json",
             ),
         )
-        review = parse_review(response.text)
+        review = parse_review(response.text, detail_regions=detail_regions)
     except Exception as e:
         logger.error(f"review_product_fidelity failed: {e}")
         return json.dumps({"status": "failure", "error_message": str(e)})

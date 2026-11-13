@@ -65,6 +65,18 @@ Rules:
     covered, say that the measurements are not reliable here.
   Mention the measured difference in plain words in the colour evidence, for
   example "the pink measures about 9 degrees redder".
+- You may be given CLOSE-UPS: the same areas of the print cut from both images
+  (for example the centre and a corner). Small changes hide in a layout that
+  otherwise matches, so compare each pair closely: the inner drawing of each
+  motif (centres, rings, spirals, petals, feathers, dots), small motifs that were
+  added or removed, and lines that were redrawn. The close-ups are lined up
+  roughly, so a small shift, crop or size difference between a pair is not a
+  mismatch. For each close-up add one entry to "detail_checks" with "region"
+  (the name given), "status" ("match", "mismatch" or "unclear") and "evidence"
+  (what you see in each image, one sentence). A close-up that differs means the
+  pattern is a "mismatch".
+- Pattern confidence is "high" only if every close-up matches. Without close-ups,
+  use "medium" at most for pattern.
 - Fold creases and wrinkles are not design features and are not defects.
 - Report texture only as "looks different from the reference" with low confidence,
   and only inside the evidence of an existing criterion. It is not a criterion.
@@ -102,6 +114,10 @@ Return only JSON in exactly this shape and no other text:
     {"criterion": "...", "status": "...", "evidence": "...", "confidence": "..."}
   ],
   "summary": "Two or three plain sentences for a shop owner. No jargon.",
-  "next_step": "One short suggestion, or an empty string."
+  "next_step": "One short suggestion, or an empty string.",
+  "detail_checks": [
+    {"region": "...", "status": "...", "evidence": "..."}
+  ]
 }
+"detail_checks" is an empty list when no close-ups were given.
 """

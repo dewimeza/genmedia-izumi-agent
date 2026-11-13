@@ -328,15 +328,110 @@ def test_colour_confidence_is_never_high():
             "assessment": "no_obvious_issue",
             "findings": [
                 _finding("colour", confidence="high"),
-                _finding("pattern", confidence="high"),
-                _finding("shape"),
+                _finding("pattern"),
+                _finding("shape", confidence="high"),
                 _finding("visible_branding"),
             ],
         }
     )
     by = {f["criterion"]: f for f in prt.parse_review(raw)["findings"]}
     assert by["colour"]["confidence"] == "medium"
+    assert by["shape"]["confidence"] == "high"
+
+
+# ---- v6: close-ups ---------------------------------------------------------
+
+REGIONS = tuple(name for name, *_ in prt.DETAIL_REGIONS)
+
+
+def _with_details(statuses, pattern_confidence="high", **extra):
+    checks = [
+        {"region": r, "status": s, "evidence": f"{r} seen"}
+        for r, s in zip(REGIONS, statuses)
+    ]
+    data = json.loads(_model_json(detail_checks=checks, **extra))
+    for f in data["findings"]:
+        if f["criterion"] == "pattern":
+            f["confidence"] = pattern_confidence
+    return json.dumps(data)
+
+
+def test_pattern_high_needs_close_ups():
+    review = prt.parse_review(_model_json())  # no close-ups sent
+    by = {f["criterion"]: f for f in review["findings"]}
+    assert by["pattern"]["confidence"] == "medium"
+    assert review["detail_checks"] == []
+
+
+def test_pattern_stays_high_when_every_close_up_matches():
+    raw = _with_details(["match"] * len(REGIONS))
+    review = prt.parse_review(raw, detail_regions=REGIONS)
+    by = {f["criterion"]: f for f in review["findings"]}
     assert by["pattern"]["confidence"] == "high"
+    assert review["assessment"] == "no_obvious_issue"
+
+
+def test_a_differing_close_up_makes_the_pattern_a_mismatch():
+    # Test 11: the layout matched but the medallion centre was redrawn.
+    raw = _with_details(["mismatch", "match", "match"])
+    review = prt.parse_review(raw, detail_regions=REGIONS)
+    by = {f["criterion"]: f for f in review["findings"]}
+    assert by["pattern"]["status"] == "mismatch"
+    assert by["pattern"]["confidence"] == "medium"
+    assert "Close-up of the centre" in by["pattern"]["evidence"]
+    assert review["assessment"] == "issues_found"
+
+
+def test_a_missing_close_up_check_counts_as_unclear():
+    raw = _with_details(["match", "match"])  # third one not reported
+    review = prt.parse_review(raw, detail_regions=REGIONS)
+    assert review["detail_checks"][2]["status"] == "unclear"
+    by = {f["criterion"]: f for f in review["findings"]}
+    assert by["pattern"]["confidence"] == "medium"
+
+
+def test_close_up_checks_for_unknown_regions_are_ignored():
+    checks = [{"region": "elsewhere", "status": "mismatch", "evidence": "x"}]
+    review = prt.parse_review(_model_json(detail_checks=checks), detail_regions=REGIONS)
+    assert [d["region"] for d in review["detail_checks"]] == list(REGIONS)
+    assert all(d["status"] == "unclear" for d in review["detail_checks"])
+
+
+def test_crops_follow_the_print_not_the_frame():
+    crops = prt.make_detail_crops(_png(GROUND, PINK, size=300))
+    assert [name for name, _ in crops] == list(REGIONS)
+    from PIL import Image
+    import io
+
+    for _, png in crops:
+        with Image.open(io.BytesIO(png)) as im:
+            # The print block fills the top-left of the picture, so every
+            # close-up is cut from inside it and is mostly pink.
+            pixels = list(im.convert("RGB").getdata())
+            pink = sum(1 for p in pixels if p == PINK)
+            assert pink / len(pixels) > 0.9
+
+
+@pytest.mark.parametrize("data", [b"", b"not an image", None])
+def test_no_crops_for_unreadable_or_plain_images(data):
+    if data is None:
+        data = _png(GROUND, GROUND)
+    assert prt.make_detail_crops(data) == []
+
+
+async def test_review_sends_close_ups_and_enforces_them(tool_context):
+    files = {
+        "ref.png": (_png(GROUND, PINK, size=300), "image/png"),
+        "cand.png": (_png(GROUND, PINK, size=300), "image/png"),
+    }
+    out, client = await _run_review(
+        tool_context, files, _with_details(["mismatch", "match", "match"])
+    )
+    assert out["status"] == "success"
+    contents = client.aio.models.generate_content.call_args.kwargs["contents"]
+    labels = [c for c in contents if isinstance(c, str) and c.startswith("Close-up")]
+    assert len(labels) == 2 * len(REGIONS)
+    assert out["review"]["assessment"] == "issues_found"
 
 
 def test_unclear_finding_has_low_confidence():
