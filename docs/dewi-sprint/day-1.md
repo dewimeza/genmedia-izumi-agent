@@ -14,8 +14,8 @@ Project IDs, bucket names and billing details are intentionally not recorded in 
 | --- | --- |
 | uv | 0.13.6 |
 | Node | 23.11.0 |
-| Google Cloud CLI | 591.0.0 |
-| Java (Firestore emulator) | Temurin 21.0.13 |
+| Google Cloud CLI | 591.0.0 (593.0.0 from 2026-11-13) |
+| Java (Firestore emulator) | Temurin 21.0.13 (Temurin 25.0.5 from 2026-11-13, see failure 7) |
 | Python | 3.11.14, installed by uv (project allows >=3.11,<3.13; README mentions 3.12) |
 | Run command | `./scripts/start-all.sh --with-db-emulator` (local Firestore emulator) |
 | Cloud | Vertex AI enabled; billing linked; $10 monthly budget alert |
@@ -51,6 +51,7 @@ Side effect: Imagen returns 404 at `global`, so use Gemini Image for generation 
 4. 404 for `gemini-2.5-flash`: see the changes table.
 5. 404 for Imagen at `global`: see the side effect above.
 6. Gemini Image failed on empty reference names: see the changes table.
+7. Later, on 2026-11-13: the Firestore emulator had gone missing after a gcloud update. Reinstalling it (`gcloud components install cloud-firestore-emulator`, with `sudo` because gcloud is installed through Homebrew) brought a version that needs Java 25 or newer. Fix: Temurin 25 installed next to Java 21 and put first on `PATH` only when starting the app.
 
 ## Five-sentence summary
 
@@ -60,7 +61,7 @@ Side effect: Imagen returns 404 at `global`, so use Gemini Image for generation 
 4. **What failed:** At first it called a visibly redder pink a match with high confidence, used wording that was too sure ("match precisely"), and didn't ask for a clearer photo when the scarf was partly hidden.
 5. **What I will do next:** Next I'll test more AI-generated images from Izumi, including a strong colour change and an added or removed bird, check whether the reviewer gives the same answer when I repeat a test, and find out who made the design before sharing any images publicly.
 
-Details of every test are in `test-results.md`. The plan asks for two cases to stay unseen until Day 5; all eight test images were used while tuning the reviewer, so two new cases are needed.
+Details of every test are in `test-results.md`. The plan asks for two cases to stay unseen until Day 5; all eight test images were used while tuning the reviewer, so two new cases were needed. Dewi prepared two new cases on 2026-11-12. They are kept in the private folder and have not been shown to the reviewer or to Claude.
 
 ## Still open
 
